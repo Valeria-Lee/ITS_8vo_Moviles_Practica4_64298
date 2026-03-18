@@ -1,77 +1,97 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class ApiService {
-  static final String _apiUrl = dotenv.get('API_URL');
+  static const String _baseUrl = 'https://tu-api.com'; // ← cambia esto
+  static String? _token;
 
-  // Obtener todas las tareas
+  // ── Headers con token ──────────────────────────────────────────────────────
+  static Map<String, String> get _headers => {
+        'Content-Type': 'application/json',
+        if (_token != null) 'Authorization': 'Bearer $_token',
+      };
+
+  // ── Auth ───────────────────────────────────────────────────────────────────
+  static Future<void> login(String username, String password) async {
+    final res = await http.post(
+      Uri.parse('$_baseUrl/login'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'username': username, 'password': password}),
+    );
+    if (res.statusCode == 200) {
+      final data = jsonDecode(res.body);
+      _token = data['token'];           // ← guarda el token
+    } else {
+      throw Exception('Credenciales incorrectas (${res.statusCode})');
+    }
+  }
+
+  static Future<void> register(String username, String password) async {
+    final res = await http.post(
+      Uri.parse('$_baseUrl/register'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'username': username, 'password': password}),
+    );
+    if (res.statusCode != 200 && res.statusCode != 201) {
+      throw Exception('Error al registrar (${res.statusCode})');
+    }
+  }
+
+  static void logout() => _token = null;   // ← limpia el token
+
+  // ── Tareas (token inyectado automáticamente via _headers) ──────────────────
   static Future<List<Map<String, dynamic>>> getTasks() async {
-    final response = await http.get(Uri.parse('$_apiUrl/tareas'));
-    if (response.statusCode == 200) {
-      return List<Map<String, dynamic>>.from(json.decode(response.body));
-    } else {
-      throw Exception('Error al cargar las tareas');
-    }
-  }
-
-  // Obtener una tarea por ID
-  static Future<Map<String, dynamic>> getTaskById(int id) async {
-    final response = await http.get(Uri.parse('$_apiUrl/tareas/$id'));
-    if (response.statusCode == 200) {
-      return Map<String, dynamic>.from(json.decode(response.body));
-    } else {
-      throw Exception('Error al cargar la tarea');
-    }
-  }
-
-  // Crear una nueva tarea
-  static Future<Map<String, dynamic>> createTask(Map<String, dynamic> task) async {
-    final response = await http.post(
-      Uri.parse('$_apiUrl/tareas'),
-      headers: {'Content-Type': 'application/json'},
-      body: json.encode(task),
+    final res = await http.get(
+      Uri.parse('$_baseUrl/tasks'),
+      headers: _headers,                  // ← lleva el token
     );
-    if (response.statusCode == 200) {
-      return Map<String, dynamic>.from(json.decode(response.body));
-    } else {
-      throw Exception('Error al crear la tarea');
+    if (res.statusCode == 200) {
+      final List data = jsonDecode(res.body);
+      return data.cast<Map<String, dynamic>>();
     }
+    throw Exception('Error al obtener tareas (${res.statusCode})');
   }
 
-  // Actualizar una tarea
-  static Future<Map<String, dynamic>> updateTask(int id, Map<String, dynamic> task) async {
-    final response = await http.put(
-      Uri.parse('$_apiUrl/tareas/$id'),
-      headers: {'Content-Type': 'application/json'},
-      body: json.encode(task),
+  static Future<void> createTask(Map<String, dynamic> task) async {
+    final res = await http.post(
+      Uri.parse('$_baseUrl/tasks'),
+      headers: _headers,
+      body: jsonEncode(task),
     );
-    if (response.statusCode == 200) {
-      return Map<String, dynamic>.from(json.decode(response.body));
-    } else {
-      throw Exception('Error al actualizar la tarea');
+    if (res.statusCode != 200 && res.statusCode != 201) {
+      throw Exception('Error al crear tarea (${res.statusCode})');
     }
   }
 
-  // Marcar una tarea como completada
-  static Future<Map<String, dynamic>> toggleTaskCompletion(int id, bool completed) async {
-    final response = await http.patch(
-      Uri.parse('$_apiUrl/tareas/$id'),
-      headers: {'Content-Type': 'application/json'},
-      body: json.encode({'completada': completed}),
+  static Future<void> updateTask(dynamic id, Map<String, dynamic> task) async {
+    final res = await http.put(
+      Uri.parse('$_baseUrl/tasks/$id'),
+      headers: _headers,
+      body: jsonEncode(task),
     );
-    if (response.statusCode == 200) {
-      return Map<String, dynamic>.from(json.decode(response.body));
-    } else {
-      throw Exception('Error al actualizar la tarea');
+    if (res.statusCode != 200) {
+      throw Exception('Error al actualizar tarea (${res.statusCode})');
     }
   }
 
-  // Eliminar una tarea
-  static Future<void> deleteTask(int id) async {
-    final response = await http.delete(Uri.parse('$_apiUrl/tareas/$id'));
-    if (response.statusCode != 204) {
-      throw Exception('Error al eliminar la tarea');
+  static Future<void> deleteTask(dynamic id) async {
+    final res = await http.delete(
+      Uri.parse('$_baseUrl/tasks/$id'),
+      headers: _headers,
+    );
+    if (res.statusCode != 200 && res.statusCode != 204) {
+      throw Exception('Error al eliminar tarea (${res.statusCode})');
+    }
+  }
+
+  static Future<void> toggleTaskCompletion(dynamic id, bool completada) async {
+    final res = await http.patch(
+      Uri.parse('$_baseUrl/tasks/$id'),
+      headers: _headers,
+      body: jsonEncode({'completada': completada}),
+    );
+    if (res.statusCode != 200) {
+      throw Exception('Error al actualizar estado (${res.statusCode})');
     }
   }
 }
